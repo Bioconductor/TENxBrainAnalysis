@@ -2,7 +2,7 @@
 
 library(HDF5Array)
 hd5mat <- HDF5Array("objects/qc_counts.h5", "neurons")
-cell.data <- read.table("cell_data.txt", header=TRUE)
+cell.data <- read.table("objects/cell_data.txt", header=TRUE)
 kept <- readRDS("objects/qc_keep.rds")
 
 # Selecting reasonably high-abundance genes for normalization.
