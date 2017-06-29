@@ -1,0 +1,19 @@
+---
+title: Short analysis of the 10X million neuron data set
+author: Aaron Lun
+date: 29 June 2017
+output: 
+  BiocStyle::html_document:
+    fig.caption: no 
+---
+
+```{r style, echo = FALSE, results = 'asis'}
+BiocStyle::markdown()
+```
+
+# Introduction
+
+Here we perform a brief analysis of the 1M neuron data set from 10X genomics (https://support.10xgenomics.com/single-cell-gene-expression/datasets/1.3.0/1M_neurons).
+This uses a variety of low-level packages to represent the data on-disk, as well as high-level packages for scRNA-seq data analysis.
+The aim is to demonstrate the usefulness of the _beachmat_ API in facilitating high-level analyses from a `HDF5Matrix` object.
+

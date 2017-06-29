@@ -1,0 +1,127 @@
+# Preprocessing 
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+library(BiocStyle)
+```
+
+## Loading in the data
+
+The aim here is to convert the 10X data set into a `HDF5Matrix` object.
+First, we download the data as a HDF5 file from the 10X website.
+
+```{r}
+path <- "1M_neurons_filtered_gene_bc_matrices_h5.h5"
+```
+
+We read in the data using the `r Githubpkg("TENxGenomics")` package.
+This creates an object that points to the HDF5 file and extracts parts as required.
+
+```{r}
+library(TENxGenomics)
+tenx.se <- tenxSummarizedExperiment(path)
+tenx <- assay(tenx.se, withDimnames=FALSE)
+tenx
+```
+
+We have a look at some of the cell-level metadata.
+Data were obtained from multiple mice, which were captured and sequenced in multiple libraries. 
+Note that the libraries and nested within the mice.
+
+```{r}
+table(tenx.se$Library, tenx.se$Mouse)
+```
+
+We also add some gene-level annotation.
+
+```{r}
+library(org.Mm.eg.db)
+symbols <- mapIds(org.Mm.eg.db, keys=rownames(tenx), keytype="ENSEMBL", column="SYMBOL")
+library(TxDb.Mmusculus.UCSC.mm10.ensGene)
+chr.loc <- mapIds(TxDb.Mmusculus.UCSC.mm10.ensGene, keys=rownames(tenx), 
+                  keytype="GENEID", column="CDSCHROM")
+anno <- data.frame(SYMBOL=symbols, CHR=chr.loc)
+rowData(tenx.se) <- cbind(rowData(tenx.se), anno)
+head(anno)
+```
+
+## Calculating some cell-based QC metrics
+
+We set up a function to calculate some summaries for each cell, for use in quality control.
+This is derived from the `margin.summary` function in the _TENxGenomics_ vignette.
+
+```{r}
+cell.summary <- function(x, is.mito) {
+    ucidx <- unique(x$cidx)
+    x$cidx <- match(x$cidx, ucidx)
+
+    # Taking sum of only mitochondrial genes.
+    mito.val <- x$value
+    mito.val[!is.mito[x$ridx]] <- 0L
+
+    data.frame(
+        cidx = ucidx,
+        n = tabulate(x$cidx, length(ucidx)),
+        sum = vapply(split(x$value, x$cidx), sum, numeric(1), USE.NAMES=FALSE),
+        mito = vapply(split(mito.val, x$cidx), sum, numeric(1), USE.NAMES=FALSE)
+    )
+}
+```
+
+This can be executed in parallel to provide some speed-ups with respect to time. 
+Here, parallel execution is turned off to save memory.
+
+```{r, message=FALSE}
+library(BiocParallel)
+register(MulticoreParam(progressbar=TRUE, workers=1))
+result <- tenxiterate(tenx, cell.summary, is.mito=(anno$CHR=="chrM" & !is.na(anno$CHR)))
+cols <- do.call("rbind", result)
+colnames(cols) <- c("Cell", "Ngenes", "Libsize", "Mito")
+```
+
+We have a look at the three relevant metrics.
+
+```{r preprocess-qchist, fig.height=6, fig.width=10}
+par(mfrow=c(1,3))
+hist(log10(cols$Libsize), xlab=expression("Log"[10]~"library size"), col="grey80")
+hist(log10(cols$Ngenes), xlab=expression("Log"[10]~"number of genes expressed"), col="grey80")
+mito.prop <- cols$Mito/cols$Libsize*100
+hist(mito.prop, xlab="Percentage of mitochondrial reads", col="grey80", breaks=100)
+```
+
+We use some of these metrics for quality control on the cells.
+This is done within each batch to avoid discarding cells, e.g., if one batch was sequenced at lower depth.
+
+```{r}
+library(scater)
+low.libsize <- isOutlier(cols$Libsize, log=TRUE, nmad=3, batch=tenx.se$Library, type="lower")
+low.ngenes <- isOutlier(cols$Ngenes, log=TRUE, nmad=3, batch=tenx.se$Library, type="lower")
+discard <- low.libsize | low.ngenes 
+data.frame(LowLib=sum(low.libsize), LowGenes=sum(low.ngenes), Lost=sum(discard))
+```
+
+## Converting into a `HDF5Matrix` object
+
+We first reload the 10X data as a `TENxMatrix`, with the unnecessary cells discarded.
+
+```{r}
+tenxmat <- TENxMatrix(path)[,!discard]
+```
+
+We write this to disk as a `HDF5Matrix` with column-wise chunks.
+
+```{r}
+library(HDF5Array)
+options(DelayedArray.block.size=2e8)
+mat.out <- writeHDF5Array(tenxmat, file="objects/qc_counts.h5", name="neurons", chunk_dim=c(1e4, 1))
+```
+
+We use this to construct a new `SummarizedExperiment` object for serialization.
+
+```{r}
+se.out <- SummarizedExperiment(mat.out, rowData=rowData(tenx.se), 
+                               colData=cbind(colData(tenx.se)[!discard,], cols[!discard,]))
+saveRDS(se.out, file="objects/qc_mat.rds")                               
+se.out                               
+```
+
