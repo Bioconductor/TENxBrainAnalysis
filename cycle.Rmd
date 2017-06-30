@@ -1,0 +1,33 @@
+# Assigning cell cycle phase
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+library(BiocStyle)
+library(HDF5Array)
+library(SummarizedExperiment)
+se.out <- readRDS("objects/qc_mat.rds")
+```
+
+Here, we use the `cyclone` method to assign cells to the cell cycle phase.
+We do so using a number of cores.
+
+```{r}
+library(scran)
+mm.pairs <- readRDS(system.file("exdata", "mouse_cycle_markers.rds", package="scran"))
+assigned <- cyclone(assay(se.out, withDimnames=FALSE), mm.pairs, 
+                    gene.names=rowData(se.out)$Ensembl, BPPARAM=MulticoreParam(3))
+table(assigned$phase)
+```
+
+Making a plot of the cell cycle scores.
+
+```{r}
+smoothScatter(assigned$scores$G1, assigned$scores$G2M, 
+    xlab="G1 score", ylab="G2M score")
+```
+
+Saving the results to file for later use.
+
+```{r}
+saveRDS(assigned, file="objects/cycle_output.rds")
+```
