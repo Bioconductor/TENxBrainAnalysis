@@ -20,8 +20,7 @@ This creates an object that points to the HDF5 file and extracts parts as requir
 ```{r}
 library(TENxGenomics)
 tenx.se <- tenxSummarizedExperiment(path)
-tenx <- assay(tenx.se, withDimnames=FALSE)
-tenx
+tenx.se
 ```
 
 We have a look at some of the cell-level metadata.
@@ -33,12 +32,11 @@ table(tenx.se$Library, tenx.se$Mouse)
 ```
 
 We also add some gene-level annotation.
+There's already gene symbols, so we just add the chromosome location.
 
 ```{r}
-library(org.Mm.eg.db)
-symbols <- mapIds(org.Mm.eg.db, keys=rownames(tenx), keytype="ENSEMBL", column="SYMBOL")
 library(TxDb.Mmusculus.UCSC.mm10.ensGene)
-chr.loc <- mapIds(TxDb.Mmusculus.UCSC.mm10.ensGene, keys=rownames(tenx), 
+chr.loc <- mapIds(TxDb.Mmusculus.UCSC.mm10.ensGene, keys=rownames(tenx.se), 
                   keytype="GENEID", column="CDSCHROM")
 anno <- data.frame(SYMBOL=symbols, CHR=chr.loc)
 rowData(tenx.se) <- cbind(rowData(tenx.se), anno)
@@ -74,6 +72,7 @@ Here, parallel execution is turned off to save memory.
 ```{r, message=FALSE}
 library(BiocParallel)
 register(MulticoreParam(progressbar=TRUE, workers=1))
+tenx <- assay(tenx.se, withDimnames=FALSE)
 result <- tenxiterate(tenx, cell.summary, is.mito=(anno$CHR=="chrM" & !is.na(anno$CHR)))
 cols <- do.call("rbind", result)
 colnames(cols) <- c("Cell", "Ngenes", "Libsize", "Mito")
@@ -119,7 +118,7 @@ mat.out <- writeHDF5Array(tenxmat, file="objects/qc_counts.h5", name="neurons", 
 We use this to construct a new `SummarizedExperiment` object for serialization.
 
 ```{r}
-se.out <- SummarizedExperiment(mat.out, rowData=rowData(tenx.se), 
+se.out <- SummarizedExperiment(list(counts=mat.out), rowData=rowData(tenx.se), 
                                colData=cbind(colData(tenx.se)[!discard,], cols[!discard,]))
 saveRDS(se.out, file="objects/qc_mat.rds")                               
 se.out                               
