@@ -20,7 +20,7 @@ This is to filter out low-abundance genes, as having too many zeroes will overwh
 ```{r}
 library(scater)
 hd5mat <- assay(se.out, withDimnames=FALSE)
-ab <- calcAverage(hd5mat, size.factors=cell.data$Libsize[kept])
+ab <- calcAverage(hd5mat, size.factors=se.out$Libsize)
 hist(log10(ab), xlab="Log10-average count", col="grey80")
 ```
 
@@ -36,7 +36,7 @@ We split the cells into chunks that are nested within each library.
 This is because the QR decomposition forms a full matrix and requires too much memory for large numbers of cells.
 
 ```{r}
-lib.source <- factor(cell.data$Library[kept])
+lib.source <- factor(se.out$Library)
 by.lib <- split(rep(1:5, length.out=length(lib.source)), lib.source)
 for (x in names(by.lib)) {
     by.lib[[x]] <- paste0(x, ".", sort(by.lib[[x]]))       
@@ -52,14 +52,15 @@ We now compute a size factor for each cell using the specified parameters.
 ```{r}
 library(scran)
 sfs <- computeSumFactors(hd5mat, cluster=mod.source, subset.row=keep)
-sizeFactors(se.out) <- sfs
+se.out$size_factors <- sfs
 summary(sfs)
 ```
 
 We can have a look at them in more detail, compared to the library size for each cell.
 
 ```{r sizefacplot}
-smoothScatter(se.out$Libsize, sfs, log="xy", xlab="Library size", ylab="Size factors")
+plot(se.out$Libsize, sfs, log="xy", xlab="Library size", 
+     ylab="Size factors", cex=0.2, pch=16)
 ```
 
 ## Normalizing the expression values 
@@ -80,7 +81,8 @@ We calculate normalized log-expression values and save this to a new `HDF5Matrix
 ```{r}
 options(DelayedArray.block.size=2e8)
 log.norm <- log2(t(t(hd5mat)/sfs) + 1)
-expr.mat <- writeHDF5Array(log.norm, file="objects/norm_exprs.h5", name="neurons", chunk=c(chunk.nrow, chunk.ncol))
+expr.mat <- writeHDF5Array(log.norm, file="objects/norm_exprs.h5", name="neurons", 
+                           chunk=c(chunk.nrow, chunk.ncol))
 ```
 
 We also store this in the `SummarizedExperiment` object.
