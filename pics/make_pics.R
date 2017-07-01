@@ -1,3 +1,4 @@
+################################################################################
 # Making a cell cycle picture.
 
 assignments <- readRDS("../objects/cycle_output.rds")
@@ -11,7 +12,7 @@ output <- log10(output+1)
 my.cols <- rev(grey.colors(15))
 upper <- ceiling(max(output))
 
-pdf("cycle.pdf", width=8, height=7)
+png("cycle.png", width=8, height=7, units="in", res=300, pointsize=12)
 layout(cbind(1,2), width=c(10, 2))
 old.mar <- par()$mar
 par(mar=c(5.1, 4.1, 4.1, 0.5))
@@ -29,7 +30,7 @@ text(0.5, 0.4, col="red", sprintf("G1 phase:\n%i", sum(assignments$phase=="G1"))
 # Adding the legend.
 par(mar=c(5.1, 0, 4.1, 0))
 plot.new()
-plot.window(xlim=c(-0.1,1.5), ylim=c(0, 10))
+plot.window(xlim=c(-0.1,2), ylim=c(0, 10))
 
 start <- 4
 inc <- 0.3
@@ -43,3 +44,18 @@ text(0.5, top.height-inc/2, pos=4, upper)
 text(0, top.height+inc, pos=4, expression(Log[10]*"(cells+1)"), cex=0.8, offset=0)
 par(mar=old.mar)
 dev.off()
+
+################################################################################
+# Making a plot of the size factors.
+
+library(SummarizedExperiment)
+se.out <- readRDS("../objects/qc_mat.rds")
+
+options(bitmapType="cairo")
+png("sizefacs.png", width=7, height=7, units="in", res=300, pointsize=12)
+plot(se.out$Libsize/1e3, se.out$size_factors, log="xy", 
+     xlab=expression("Library size ("*10^3*")"), ylab="Size factor", 
+     cex.axis=1.2, cex.lab=1.4, pch=16, cex=0.2, col=rgb(0,0,0,0.2))
+dev.off()
+
+
