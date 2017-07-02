@@ -51,11 +51,18 @@ dev.off()
 library(SummarizedExperiment)
 se.out <- readRDS("../objects/qc_mat.rds")
 
+ratio <- log(se.out$size_factors/se.out$Libsize)
+nmads <- abs((ratio - median(ratio))/mad(ratio))
+
+library(viridis)
+my.cols <- rev(viridis(11))
+coldex <- findInterval(nmads, 0:10/2)
+
 options(bitmapType="cairo")
 png("sizefacs.png", width=7, height=7, units="in", res=300, pointsize=12)
-plot(se.out$Libsize/1e3, se.out$size_factors, log="xy", 
+plot(se.out$Libsize/1e3, se.out$size_factors, log="xy", col=my.cols[coldex], 
      xlab=expression("Library size ("*10^3*")"), ylab="Size factor", 
-     cex.axis=1.2, cex.lab=1.4, pch=16, cex=0.2, col=rgb(0,0,0,0.2))
+     cex.axis=1.2, cex.lab=1.4, pch=16, cex=0.2)
 dev.off()
 
 
