@@ -65,4 +65,36 @@ plot(se.out$Libsize/1e3, se.out$size_factors, log="xy", col=my.cols[coldex],
      cex.axis=1.2, cex.lab=1.4, pch=16, cex=0.2)
 dev.off()
 
+################################################################################
+# Making a plot of the top HVGs.
+
+hvg.out <- read.table("../objects/hvg_output.txt", header=TRUE)
+is.sig <- hvg.out$FDR <= 0.05
+
+png("hvg.png", width=7, height=7, units="in", res=300, pointsize=12)
+par(mar=c(5.1, 5.1, 4.1, 2.1))
+plot(hvg.out$mean, hvg.out$total, pch=16, col="grey", 
+     xlab=expression("Mean log"[2]~"expression"),
+     ylab=expression("Variance of log"[2]~"expression"), 
+     cex.axis=1.2, cex.lab=1.4)
+points(hvg.out$mean[is.sig], hvg.out$total[is.sig], col="orange", pch=16)
+o <- order(hvg.out$mean)
+lines(hvg.out$mean[o], hvg.out$tech[o], col="red", lwd=2)
+legend("bottomright", sprintf("%i HVGs out of %i genes", sum(is.sig), length(is.sig)), bty="n", cex=1.1)
+
+# Adding the top set of genes.
+chosen <- hvg.out$Symbol[1:10]
+xoffset <- c(0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2)
+yoffset <- c(0., -0.1, 0.1, 0.1, 0.1, 0., 0.1, 0.1, 0.1, 0.)
+
+for (i in seq_along(chosen)) {
+    idex <- hvg.out$Symbol==chosen[i]
+    xpos <- hvg.out$mean[idex]
+    ypos <- hvg.out$total[idex]
+    xpos2 <- xpos + xoffset[i]
+    ypos2 <- ypos + yoffset[i]
+    text(xpos2, ypos2, chosen[i], pos=4, offset=0.1, cex=1.1)
+    segments(xpos, ypos, xpos2, ypos2)
+}
+dev.off()
 
