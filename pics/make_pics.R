@@ -98,3 +98,17 @@ for (i in seq_along(chosen)) {
 }
 dev.off()
 
+################################################################################
+# Making a PCA plot of the first two PCs.
+
+pc.data <- readRDS("../objects/pc_out.rds")
+pc.mat <- pc.data$coords
+
+options(bitmapType="cairo")
+png("pca.png", width=7, height=7, units="in", res=300, pointsize=12)
+plot(pc.mat[1,], pc.mat[2,], pch=16, cex=0.2, col=rgb(0, 0, 0, 0.2), 
+     xlab=sprintf("PC1 (%.2f%%)", pc.data$var[1]*100),
+     ylab=sprintf("PC2 (%.2f%%)", pc.data$var[2]*100),
+     cex.axis=1.2, cex.lab=1.4)
+dev.off()
+

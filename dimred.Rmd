@@ -1,0 +1,63 @@
+# Dimensionality reduction
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+```
+
+```{r, echo=FALSE, results="hide"}
+library(BiocStyle)
+library(HDF5Array)
+library(SummarizedExperiment)
+se.out <- readRDS("objects/qc_mat.rds")
+dec <- read.table("objects/hvg_output.txt", stringsAsFactors=FALSE, header=TRUE)
+```
+
+Taking the HVGs to define the biological subspace of interest.
+
+```{r}
+sig <- dec$FDR <= 0.05
+summary(sig)
+```
+
+Extracting the HVGs, mean-centering and scaling them.
+
+```{r}
+exprs.mat <- assay(se.out, "exprs", withDimnames=FALSE)
+exprs.mat <- exprs.mat[match(dec$Ensembl[sig], rowData(se.out)$Ensembl), ]
+exprs.mat <- (exprs.mat - dec$mean[sig])/sqrt(dec$total[sig])
+```
+
+Randomly selecting 10000 cells and using them for PCA.
+We've already centered and scaled, so no need to do that again.
+
+```{r}
+set.seed(123456)
+options(DelayedArray.block.size=2.5e8)
+chosen <- sort(sample(ncol(exprs.mat), 10000)) 
+selected <- t(as.matrix(realize(exprs.mat[,chosen])))
+pc.out <- prcomp(selected, scale=FALSE, center=FALSE, rank=3)
+```
+
+Making a plot of the first two PCs.
+
+```{r pcaplot, fig.width=10, fig.height=10}
+par(mfrow=c(1,2))
+smoothScatter(pc.out$x[,1], pc.out$x[,2], xlab="PC1", ylab="PC2")
+smoothScatter(pc.out$x[,1], pc.out$x[,3], xlab="PC1", ylab="PC3")
+```
+
+Computing coordinates for all cells.
+
+```{r}
+pc.mat <- as.matrix(t(pc.out$rotation) %*% exprs.mat)
+dim(pc.mat)
+```
+
+Also getting the percentage of variance explained.
+
+```{r}
+pc.var <- pc.out$sdev^2
+var.exp <- pc.var[seq_len(nrow(pc.mat))]/sum(pc.var)
+saveRDS(list(coords=pc.mat, var=var.exp), file="objects/pc_out.rds")
+```
+
