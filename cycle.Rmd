@@ -2,13 +2,10 @@
 
 ```{r, echo=FALSE, results="hide"}
 knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
-```
-
-```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
 library(HDF5Array)
-library(SummarizedExperiment)
-se.out <- readRDS("objects/qc_mat.rds")
+library(SingleCellExperiment)
+sce <- readRDS("objects/sce.rds")
 ```
 
 Here, we use the `cyclone` method to assign cells to the cell cycle phase.
@@ -18,8 +15,7 @@ We do so using the pre-trained mouse classifier, and a number of cores to reduce
 library(scran)
 set.seed(100)
 mm.pairs <- readRDS(system.file("exdata", "mouse_cycle_markers.rds", package="scran"))
-assigned <- cyclone(assay(se.out, withDimnames=FALSE), mm.pairs, 
-                    gene.names=rowData(se.out)$Ensembl, BPPARAM=MulticoreParam(3))
+assigned <- cyclone(sce, mm.pairs, gene.names=rowData(sce)$Ensembl, BPPARAM=MulticoreParam(3))
 ```
 
 Making a plot of the cell cycle scores.
@@ -32,7 +28,7 @@ smoothScatter(assigned$scores$G1, assigned$scores$G2M,
 We save the phases to the `SummarizedExperiment` object in case it's useful.
 
 ```{r}
-se.out$phase <- assigned$phase
+sce$Phase <- assigned$phase
 table(assigned$phase)
 ```
 
@@ -42,7 +38,10 @@ Saving all of the results to file for later use.
 saveRDS(assigned, file="objects/cycle_output.rds")
 ```
 
-```{r echo=FALSE, results="hide"}
-# Saving the new object as well.
-saveRDS(file="objects/qc_mat.rds", se.out)
+<!--
+Saving the updated object as well:
+
+```{r}
+saveRDS(file="objects/sce.rds", sce)
 ```
+-->

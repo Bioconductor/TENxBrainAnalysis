@@ -8,7 +8,8 @@ knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 library(BiocStyle)
 library(HDF5Array)
 library(SummarizedExperiment)
-se.out <- readRDS("objects/qc_mat.rds")
+library(scater)
+sce <- as(readRDS("objects/qc_mat.rds"), "SingleCellExperiment")
 ```
 
 ## Setting up genes and cells
@@ -16,33 +17,25 @@ se.out <- readRDS("objects/qc_mat.rds")
 Here, we use the deconvolution method to compute size factors for each cell.
 We start by computing the average abundance of each gene.
 This is to filter out low-abundance genes, as having too many zeroes will overwhelm the method.
-
-```{r}
-library(scater)
-hd5mat <- assay(se.out, withDimnames=FALSE)
-ab <- calcAverage(hd5mat, size.factors=se.out$Libsize)
-hist(log10(ab), xlab="Log10-average count", col="grey80")
-```
-
-For the purposes of normalization, we use a fairly aggressive threshold.
 Note that this only applies for normalization - this particular filter is not used in the rest of the analysis.
 
 ```{r}
-keep <- ab >= 0.1
+keep <- rowData(sce)$AverageCount >= 0.1
 summary(keep)
 ```
 
-We split the cells into chunks that are nested within each library.
-This is because the QR decomposition forms a full matrix and requires too much memory for large numbers of cells.
+We do some pre-clustering to split the cells into sensible clusters, to avoid violating the non-DE assumption and distorting the size factors.
+This is done by applying the `quickCluster` function on the cells generated from each library.
 
 ```{r}
-lib.source <- factor(se.out$Library)
-by.lib <- split(rep(1:5, length.out=length(lib.source)), lib.source)
-for (x in names(by.lib)) {
-    by.lib[[x]] <- paste0(x, ".", sort(by.lib[[x]]))       
+by.lib <- split(seq_len(ncol(sce)), sce$Library)
+cluster.id <- character(ncol(sce))
+for (lib in names(by.lib)) { 
+    current <- by.lib[[lib]]
+    ids <- quickCluster(sce[,current], subset.row=keep, 
+                        method="igraph", max.size=3000)
+    cluster.id[current] <- paste0(lib, ".", ids)
 }
-mod.source <- unlist(by.lib)
-hist(table(mod.source), xlab="Cells per chunk", col="grey80")
 ```
 
 ## Calculating size factors
@@ -51,48 +44,39 @@ We now compute a size factor for each cell using the specified parameters.
 
 ```{r}
 library(scran)
-sfs <- computeSumFactors(hd5mat, cluster=mod.source, subset.row=keep)
-se.out$size_factors <- sfs
-summary(sfs)
+sce <- computeSumFactors(sce, cluster=mod.source, subset.row=keep)
+summary(sizeFactors(sce))
 ```
 
 We can have a look at them in more detail, compared to the library size for each cell.
 
 ```{r sizefacplot}
-plot(se.out$Libsize, sfs, log="xy", xlab="Library size", 
+plot(sce$total_counts, sfs, log="xy", xlab="Library size", 
      ylab="Size factors", cex=0.2, pch=16)
 ```
 
 ## Normalizing the expression values 
 
-We pick suitable chunk parameters for both row and column access of the expression matrix. 
-
-```{r}
-ncells <- ncol(hd5mat)
-ngenes <- nrow(hd5mat)
-cache.size <- ncells*sqrt(ngenes)
-chunk.nrow <- ceiling(cache.size/ncells)
-chunk.ncol <- ceiling(cache.size/ngenes)
-c(chunk.nrow, chunk.ncol)
-```
-
 We calculate normalized log-expression values and save this to a new `HDF5Matrix` object.
+This involves resetting the HDF5 dump file directory and location so that the output is retained.
 
 ```{r}
-options(DelayedArray.block.size=2e8)
-log.norm <- log2(t(t(hd5mat)/sfs) + 1)
-expr.mat <- writeHDF5Array(log.norm, file="objects/norm_exprs.h5", name="neurons", 
-                           chunk=c(chunk.nrow, chunk.ncol))
+setHDF5DumpDir("objects")
+setHDF5DumpFile("norm_exprs.h5")
+sce <- normalize(sce)
+logcounts(sce)
 ```
 
-We also store this in the `SummarizedExperiment` object.
+We reset the locations to the defaults for future use.
 
 ```{r}
-assay(se.out, "exprs", withDimnames=FALSE) <- expr.mat
+setHDF5DumpDir()
+setHDF5DumpFile()
 ```
 
+<!--
 ```{r echo=FALSE, results="hide"}
 # Saving the new object as well.
-saveRDS(file="objects/qc_mat.rds", se.out)
+saveRDS(file="objects/sce.rds", se.out)
 ```
-
+-->
