@@ -2,6 +2,7 @@
 
 ```{r, echo=FALSE, results="hide"}
 knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+knitr::opts_chunk$set(dpi=300, dev="png", dev.args=list(pointsize=15))
 library(BiocStyle)
 ```
 
@@ -41,13 +42,13 @@ We use `r Biocpkg("scater")` to calculate quality control summarized for each ce
 
 ```{r}
 library(scater)
-sce <- calculateQCMetrics(sce, feature_controls=list(Mito=rowData(sce)$Chr=="chrM"))
+sce <- calculateQCMetrics(sce, feature_controls=list(Mito=which(rowData(sce)$Chr=="chrM")))
 head(colnames(rowData(sce)))
 ```
 
 We have a look at the three relevant metrics.
 
-```{r preprocess-qchist, fig.height=6, fig.width=10}
+```{r preprocess-qchist, fig.height=6, fig.width=12}
 par(mfrow=c(1,3))
 hist(sce$log10_total_counts, xlab=expression("Log"[10]~"library size"), col="grey80")
 hist(sce$log10_total_features, xlab=expression("Log"[10]~"number of genes expressed"), col="grey80")
@@ -70,14 +71,6 @@ Low-quality cells are discarded from the object.
 sce <- sce[,!discard]
 ```
 
-This actually involves a bit of work to realize the `DelayedMatrix` into a `HDF5Matrix` for efficient operation of downstream functions.
-
-```{r}
-realized <- writeHDF5Array(counts(sce), file="objects/mat.h5",
-    name="counts", chunk_dim=beachmat::getBestChunkDims(dim(sce)))
-counts(sce) <- realized        
-```
-
 ## Looking at gene-based metrics
 
 For further diagnostics, we calculate the average count (adjusted for library size) and the number of cells expressing each gene.
@@ -94,8 +87,9 @@ hist(log10(n.cells), xlab=expression("Log"[10]~"number of cells"), col="grey80")
 We also inspect the top most-highly-expressed genes.
 
 ```{r}
-head(rowData(sce)[order(-ave.count),c("Ensembl", "Symbol", 
-    "AverageCount", "NumCells")], 20)
+cols <- c("Ensembl", "Symbol", "AverageCount", "NumCells")
+top.genes <- rowData(sce)[order(-ave.count),cols]
+head(as.data.frame(top.genes), 20)
 ```
 
 <!--
