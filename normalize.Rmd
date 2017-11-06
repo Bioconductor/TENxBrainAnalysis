@@ -2,14 +2,13 @@
 
 ```{r, echo=FALSE, results="hide"}
 knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
-```
+knitr::opts_chunk$set(dpi=300, dev="png", dev.args=list(pointsize=15))
 
-```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
 library(HDF5Array)
-library(SummarizedExperiment)
 library(scater)
-sce <- as(readRDS("objects/qc_mat.rds"), "SingleCellExperiment")
+library(scran)
+sce <- readRDS("objects/sce.rds")
 ```
 
 ## Setting up genes and cells
@@ -25,15 +24,15 @@ summary(keep)
 ```
 
 We do some pre-clustering to split the cells into sensible clusters, to avoid violating the non-DE assumption and distorting the size factors.
-This is done by applying the `quickCluster` function on the cells generated from each library.
+This is done by applying the `quickCluster` function on the cells in each library.
 
 ```{r}
 by.lib <- split(seq_len(ncol(sce)), sce$Library)
 cluster.id <- character(ncol(sce))
 for (lib in names(by.lib)) { 
     current <- by.lib[[lib]]
-    ids <- quickCluster(sce[,current], subset.row=keep, 
-                        method="igraph", max.size=3000)
+    ids <- quickCluster(sce[,current], subset.row=keep, method="igraph", 
+        max.size=3000, irlba.args=list(maxit=1000))
     cluster.id[current] <- paste0(lib, ".", ids)
 }
 ```
@@ -44,15 +43,16 @@ We now compute a size factor for each cell using the specified parameters.
 
 ```{r}
 library(scran)
-sce <- computeSumFactors(sce, cluster=mod.source, subset.row=keep)
+sce <- computeSumFactors(sce, cluster=cluster.id, 
+    subset.row=keep, min.mean=NULL)
 summary(sizeFactors(sce))
 ```
 
 We can have a look at them in more detail, compared to the library size for each cell.
 
 ```{r sizefacplot}
-plot(sce$total_counts, sfs, log="xy", xlab="Library size", 
-     ylab="Size factors", cex=0.2, pch=16)
+plot(sce$total_counts, sizeFactors(sce), log="xy", xlab="Library size", 
+    ylab="Size factors", cex=0.2, pch=16)
 ```
 
 ## Normalizing the expression values 
