@@ -2,6 +2,9 @@
 
 ```{r, echo=FALSE, results="hide"}
 knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+```
+
+```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
 library(HDF5Array)
 library(SingleCellExperiment)
@@ -9,7 +12,7 @@ sce <- readRDS("objects/sce.rds")
 ```
 
 Here, we use the `cyclone` method to assign cells to the cell cycle phase.
-We do so using the pre-trained mouse classifier, and a number of cores to reduce computational time.
+We do so using the pre-trained mouse classifier and multiple cores to reduce computational time.
 
 ```{r}
 library(scran)

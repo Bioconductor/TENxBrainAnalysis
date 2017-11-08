@@ -3,7 +3,9 @@
 ```{r, echo=FALSE, results="hide"}
 knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 knitr::opts_chunk$set(dpi=300, dev="png", dev.args=list(pointsize=15))
+```
 
+```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
 library(HDF5Array)
 library(scater)
@@ -43,8 +45,7 @@ We now compute a size factor for each cell using the specified parameters.
 
 ```{r}
 library(scran)
-sce <- computeSumFactors(sce, cluster=cluster.id, 
-    subset.row=keep, min.mean=NULL)
+sce <- computeSumFactors(sce, cluster=cluster.id, subset.row=keep, min.mean=NULL)
 summary(sizeFactors(sce))
 ```
 
