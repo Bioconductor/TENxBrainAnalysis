@@ -62,8 +62,7 @@ We calculate normalized log-expression values and save this to a new `HDF5Matrix
 This involves resetting the HDF5 dump file directory and location so that the output is retained.
 
 ```{r}
-setHDF5DumpDir("objects")
-setHDF5DumpFile("norm_exprs.h5")
+setHDF5DumpFile("objects/norm_exprs.h5")
 sce <- normalize(sce)
 logcounts(sce)
 ```
@@ -71,13 +70,12 @@ logcounts(sce)
 We reset the locations to the defaults for future use.
 
 ```{r}
-setHDF5DumpDir()
 setHDF5DumpFile()
 ```
 
 <!--
 ```{r echo=FALSE, results="hide"}
 # Saving the new object as well.
-saveRDS(file="objects/sce.rds", se.out)
+saveRDS(file="objects/sce.rds", sce)
 ```
 -->
