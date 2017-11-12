@@ -6,44 +6,36 @@ knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 
 ```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
-library(HDF5Array)
-library(SummarizedExperiment)
-se.out <- readRDS("objects/qc_mat.rds")
+library(scran)
+sce <- readRDS("objects/sce.rds")
 ```
 
 First, we set up the design matrix to block on the library of origin for each cell.
 This ensures that we do not detect variance due to technical differences in sequencing.
 
 ```{r}
-lib.source <- factor(se.out$Library)
+lib.source <- factor(sce$Library)
 design <- model.matrix(~0 + lib.source)
 ```
 
-Next, we filter out low-abundance genes that do not have enough evidence to reject the null, and just increase the severity of the multiple testing correction.
-This also reduces computational work and improves the quality of the fitted trend.
-
-```{r}
-library(scater)
-count.mat <- assay(se.out, withDimnames=FALSE)
-ab <- calcAverage(count.mat, size.factors=se.out$Libsize)
-keep <- ab >= 0.01
-summary(keep)
-```
-
-We compute the variance of the normalized log-expression values while blocking on the library of origin.
+We compute the variance of the normalized log-expression values while blocking on the library of origin, and we fit a trend to it.
 
 ```{r}
 library(scran)
-expr.mat <- assay(se.out, "exprs", withDimnames=FALSE)
-fit <- trendVar(expr.mat, trend="semiloess", design=design, 
-                span=0.2, subset.row=keep)
+fit <- trendVar(sce, method="loess", parametric=TRUE, 
+    design=design, use.spikes=FALSE, span=0.2)
+```
+
+We then decompose the biological and technical component for each gene.
+
+```{r}
 dec <- decomposeVar(fit=fit)
-dec <- cbind(rowData(se.out)[keep,1:2], dec)
+dec <- cbind(rowData(sce)[,1:2], dec)
 dec <- dec[order(dec$p.value, -dec$bio),]
 head(dec)
 ```
 
-We can examine the mean-variance relationship and verify that the trend was fitted correctly.
+We examine the mean-variance relationship and verify that the trend was fitted correctly.
 
 ```{r hvgplot}
 plot(dec$mean, dec$total, pch=16, cex=0.5, xlab="Mean of log-expression", 
@@ -51,8 +43,16 @@ plot(dec$mean, dec$total, pch=16, cex=0.5, xlab="Mean of log-expression",
 curve(fit$trend(x), add=TRUE, col="red")
 ```
 
-Saving the results to file.
+Finally we save the results to file.
 
 ```{r}
 write.table(file="objects/hvg_output.txt", dec, sep="\t", quote=FALSE, row.names=FALSE)
 ```
+
+<!--
+Also saving the trend.
+
+```{r}
+saveRDS(file="objects/trendfit.rds", fit)
+```
+-->
