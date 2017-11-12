@@ -19,11 +19,13 @@ design <- model.matrix(~0 + lib.source)
 ```
 
 We compute the variance of the normalized log-expression values while blocking on the library of origin, and we fit a trend to it.
+Some fiddling with the trend parameters is necessary to obtain an appropriate fit at high abundances.
 
 ```{r}
 library(scran)
 fit <- trendVar(sce, method="loess", parametric=TRUE, 
-    design=design, use.spikes=FALSE, span=0.2)
+    design=design, use.spikes=FALSE, 
+    loess.args=list(span=0.05, control=loess.control(iterations=100)))
 ```
 
 We then decompose the biological and technical component for each gene.
