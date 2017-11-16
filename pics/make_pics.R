@@ -21,9 +21,9 @@ dev.off()
 # Making a plot of the size factors.
 
 library(SummarizedExperiment)
-se.out <- readRDS("../objects/qc_mat.rds")
+sce <- readRDS("../objects/sce.rds")
 
-ratio <- log(se.out$size_factors/se.out$Libsize)
+ratio <- log(sizeFactors(sce)/sce$total_counts)
 nmads <- abs((ratio - median(ratio))/mad(ratio))
 
 library(viridis)
@@ -32,7 +32,7 @@ coldex <- findInterval(nmads, 0:10/2)
 
 options(bitmapType="cairo")
 png("sizefacs.png", width=7, height=7, units="in", res=300, pointsize=12)
-plot(se.out$Libsize/1e3, se.out$size_factors, log="xy", col=my.cols[coldex], 
+plot(sce$total_counts/1e3, sizeFactors(sce), log="xy", col=my.cols[coldex], 
      xlab=expression("Library size ("*10^3*")"), ylab="Size factor", 
      cex.axis=1.2, cex.lab=1.4, pch=16, cex=0.2)
 dev.off()
@@ -52,7 +52,7 @@ plot(hvg.out$mean, hvg.out$total, pch=16, col="grey",
 points(hvg.out$mean[is.sig], hvg.out$total[is.sig], col="orange", pch=16)
 o <- order(hvg.out$mean)
 lines(hvg.out$mean[o], hvg.out$tech[o], col="red", lwd=2)
-legend("bottomright", sprintf("%i HVGs out of %i genes", sum(is.sig), length(is.sig)), bty="n", cex=1.1)
+legend("bottomright", sprintf("%i HVGs out of %i genes", sum(is.sig & !is.na(is.sig)), length(is.sig)), bty="n", cex=1.1)
 
 # Adding the top set of genes.
 chosen <- hvg.out$Symbol[1:10]
@@ -73,14 +73,15 @@ dev.off()
 ################################################################################
 # Making a PCA plot of the first two PCs.
 
-pc.data <- readRDS("../objects/pc_out.rds")
-pc.mat <- pc.data$coords
+#pc.data <- readRDS("../objects/sce.rds")
+pc.mat <- reducedDim(sce)
+pc.var <- attr(pc.mat, "percentVar")
 
 options(bitmapType="cairo")
 png("pca.png", width=7, height=7, units="in", res=300, pointsize=12)
 plot(pc.mat[1,], pc.mat[2,], pch=16, cex=0.2, col=rgb(0, 0, 0, 0.2), 
-     xlab=sprintf("PC1 (%.2f%%)", pc.data$var[1]*100),
-     ylab=sprintf("PC2 (%.2f%%)", pc.data$var[2]*100),
+     xlab=sprintf("PC1 (%.2f%%)", pc.var[1]*100),
+     ylab=sprintf("PC2 (%.2f%%)", pc.var[2]*100),
      cex.axis=1.2, cex.lab=1.4)
 dev.off()
 
