@@ -79,7 +79,7 @@ pc.var <- attr(pc.mat, "percentVar")
 
 options(bitmapType="cairo")
 png("pca.png", width=7, height=7, units="in", res=300, pointsize=12)
-plot(pc.mat[1,], pc.mat[2,], pch=16, cex=0.2, col=rgb(0, 0, 0, 0.2), 
+smoothScatter(pc.mat[,1], pc.mat[,2], colramp=colorRampPalette(c("white", "black")),
      xlab=sprintf("PC1 (%.2f%%)", pc.var[1]*100),
      ylab=sprintf("PC2 (%.2f%%)", pc.var[2]*100),
      cex.axis=1.2, cex.lab=1.4)
