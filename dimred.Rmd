@@ -6,58 +6,66 @@ knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 
 ```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
-library(HDF5Array)
-library(SummarizedExperiment)
-se.out <- readRDS("objects/qc_mat.rds")
+library(SingleCellExperiment)
+sce <- readRDS("objects/sce.rds")
 dec <- read.table("objects/hvg_output.txt", stringsAsFactors=FALSE, header=TRUE)
 ```
 
 Taking the HVGs to define the biological subspace of interest.
 
 ```{r}
-sig <- dec$FDR <= 0.05
+sig <- dec$FDR <= 0.05 & !is.na(dec$FDR)
 summary(sig)
 ```
 
-Extracting the HVGs, mean-centering and scaling them.
+Extracting the HVGs and mean-centering them.
 
 ```{r}
-exprs.mat <- assay(se.out, "exprs", withDimnames=FALSE)
-exprs.mat <- exprs.mat[match(dec$Ensembl[sig], rowData(se.out)$Ensembl), ]
-exprs.mat <- (exprs.mat - dec$mean[sig])/sqrt(dec$total[sig])
+exprs.mat <- logcounts(sce)
+exprs.mat <- exprs.mat[match(dec$Ensembl[sig], rowData(sce)$Ensembl), ]
+exprs.mat <- exprs.mat - dec$mean[sig]
 ```
 
-Randomly selecting 10000 cells and using them for PCA.
-We've already centered and scaled, so no need to do that again.
+Performing random PCA on the resulting expression matrix to retain the first 50 PCs.
+Here we use the `r Githubpkg("Bioconductor/BigDataAlgorithms")` package that contains a randomized SVD implementation for `DelayedArray` objects.
 
 ```{r}
-set.seed(123456)
-options(DelayedArray.block.size=2.5e8)
-chosen <- sort(sample(ncol(exprs.mat), 10000)) 
-selected <- t(as.matrix(realize(exprs.mat[,chosen])))
-pc.out <- prcomp(selected, scale=FALSE, center=FALSE, rank=3)
+library(BigDataAlgorithms)
+set.seed(1000)
+options(DelayedArray.block.size=200e6)
+svd.out <- rsvd(t(exprs.mat), k=50)
+pc.out <- sweep(svd.out$u, 2, svd.out$d, "*")
 ```
 
-Making a plot of the first two PCs.
+Having a look at the variance explained by the top 50 PCs.
 
-```{r pcaplot, fig.width=10, fig.height=10}
+```{r screeplot}
+var.exp <- svd.out$d^2/(ncol(exprs.mat)-1)
+total.var <- sum(dec$total[sig])
+plot(var.exp/total.var*100, xlab="PC number", ylab="% variance explained")
+```
+
+Making a plot of the first three PCs.
+
+```{r pcaplot, fig.width=12, fig.height=6}
 par(mfrow=c(1,2))
-smoothScatter(pc.out$x[,1], pc.out$x[,2], xlab="PC1", ylab="PC2")
-smoothScatter(pc.out$x[,1], pc.out$x[,3], xlab="PC1", ylab="PC3")
+smoothScatter(pc.out[,1], pc.out[,2], xlab="PC1", ylab="PC2")
+smoothScatter(pc.out[,1], pc.out[,3], xlab="PC1", ylab="PC3")
 ```
 
-Computing coordinates for all cells.
+Storing the PCs in the `SingleCellExperiment` object. 
+Also saving the SVD values for future use.
 
 ```{r}
-pc.mat <- as.matrix(t(pc.out$rotation) %*% exprs.mat)
-dim(pc.mat)
+attr(pc.out, "percentVar") <- var.exp/total.var
+reducedDim(sce, "rPCA") <- pc.out
+saveRDS(svd.out, file="objects/rsvd.rds")
 ```
 
-Also getting the percentage of variance explained.
+<!--
+Saving the updated SCE object.
 
 ```{r}
-pc.var <- pc.out$sdev^2
-var.exp <- pc.var[seq_len(nrow(pc.mat))]/sum(pc.var)
-saveRDS(list(coords=pc.mat, var=var.exp), file="objects/pc_out.rds")
+saveRDS(sce, file="objects/sce.rds")
 ```
-
+-->
