@@ -20,7 +20,7 @@ dev.off()
 ################################################################################
 # Making a plot of the size factors.
 
-library(SummarizedExperiment)
+library(SingleCellExperiment)
 sce <- readRDS("../objects/sce.rds")
 
 ratio <- log(sizeFactors(sce)/sce$total_counts)
