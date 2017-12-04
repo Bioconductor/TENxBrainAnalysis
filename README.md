@@ -18,6 +18,7 @@ library(TENxBrainData)
 tenx <- TENxBrainData()
 sce <- readRDS("sce.rds")
 counts(sce) <- counts(tenx) # overwrite inbuilt absolute path
+library(scater)
 sce <- normalize(sce) # generate normalized expression values
 ```
 
