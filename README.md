@@ -8,3 +8,6 @@ The scripts should be executed in the following order:
 - `normalize.Rmd`: Calculation of cell-specific size factors
 - `variance.Rmd`: Identification of highly variable genes
 - `dimred.Rmd`: Dimensionality reduction with randomized PCA 
+
+Various output objects will be saved to `objects/`.
+The `pics/make_pics.R` scripts will generate the figures used in the paper.
