@@ -10,4 +10,15 @@ The scripts should be executed in the following order:
 - `dimred.Rmd`: Dimensionality reduction with randomized PCA 
 
 Various output objects will be saved to `objects/`.
+A few of these objects are currently hosted at https://drive.google.com/open?id=1_0WbmJ2BriLKlyKEf1Bbb8K0_NwD9rw-.
+Note that `sce.rds` does not contain the actual counts or normalized expression values, and requires something like this:
+
+```r
+library(TENxBrainData)
+tenx <- TENxBrainData()
+sce <- readRDS("sce.rds")
+counts(sce) <- counts(tenx) # overwrite inbuilt absolute path
+sce <- normalize(sce) # generate normalized expression values
+```
+
 The `pics/make_pics.R` scripts will generate the figures used in the paper.
