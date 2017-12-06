@@ -17,6 +17,7 @@ Note that `sce.rds` does not contain the actual counts or normalized expression 
 library(TENxBrainData)
 tenx <- TENxBrainData()
 sce <- readRDS("sce.rds")
+tenx <- tenx[,colnames(sce)] # drop 19,672 cells from the raw TENxBrainData
 counts(sce) <- counts(tenx) # overwrite inbuilt absolute path
 library(scater)
 sce <- normalize(sce) # generate normalized expression values
