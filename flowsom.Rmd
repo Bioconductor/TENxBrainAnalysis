@@ -1,0 +1,262 @@
+---
+title: "Clustering 1.3M cells with FlowSOM"
+author: ""
+output: html_document
+---
+
+```{r}
+suppressPackageStartupMessages(library(TENxBrainData))
+suppressPackageStartupMessages(library(scater))
+suppressPackageStartupMessages(library(flowCore))
+suppressPackageStartupMessages(library(FlowSOM))
+suppressPackageStartupMessages(library(scran))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(Rtsne))
+suppressPackageStartupMessages(library(mclust))
+```
+
+## Read data
+
+```{r}
+tenx <- TENxBrainData()
+sce <- readRDS("objects/sce.rds")
+tenx <- tenx[, colnames(sce)] # drop 19,672 cells from the raw TENxBrainData
+counts(sce) <- counts(tenx) # overwrite inbuilt absolute path
+system.time(sce <- scater::normalize(sce)) # generate normalized expression values
+```
+
+## Read rSVD results
+
+```{r}
+svd <- readRDS("objects/rsvd.rds")
+pca <- sweep(svd$u, 2, svd$d, "*")
+colnames(pca) <- paste0("PC", seq_len(ncol(pca)))
+dim(pca)
+```
+
+## Apply FlowSOM to cluster the cells based on the first 50 PCs
+
+```{r}
+set.seed(123)
+system.time(ff <- flowFrame(exprs = pca))
+system.time(fSOM <- FlowSOM::ReadInput(ff, compensate = FALSE, transform = FALSE, 
+                                       scale = FALSE, silent = TRUE))
+system.time(fSOM <- FlowSOM::BuildSOM(fSOM, silent = TRUE, xdim = 13, ydim = 13))
+system.time(metaClustering <- metaClustering_consensus(fSOM$map$codes, k = 16))
+```
+
+## Add cluster info to data object
+
+```{r}
+colData(sce)$som100 <- fSOM$map$mapping[, 1]
+colData(sce)$sommeta <- metaClustering[fSOM$map$mapping[, 1]]
+```
+
+## Add rownames
+
+```{r}
+rownames(sce) <- paste0(rowData(sce)$Ensembl, ".", rowData(sce)$Symbol)
+```
+
+
+## Plot PCA representation
+
+```{r pca, fig.width = 8, fig.height = 8}
+dim(sce)
+dim(pca)
+cols <- c("#DC050C", "#E8601C", "#7BAFDE", "#1965B0", "#B17BA6",
+          "#882E72", "#F1932D", "#F6C141", "#F7EE55", "#4EB265",
+          "#90C987", "#CAEDAB", "#777777", "black", "cyan", "pink")
+names(cols) <- as.character(seq_len(length(cols)))
+dfpca <- data.frame(pca, som100 = factor(colData(sce)$som100), 
+                    sommeta = factor(colData(sce)$sommeta), 
+                    library_id = factor(colData(sce)$Library),
+                    mouse = factor(colData(sce)$Mouse),
+                    stringsAsFactors = FALSE)
+print(ggplot(dfpca, aes(x = PC1, y = PC2, color = sommeta)) + 
+        geom_point(size = 0.5) + scale_color_manual(values = cols) + 
+        theme_bw())
+print(ggplot(dfpca, aes(x = PC3, y = PC4, color = sommeta)) + 
+        geom_point(size = 0.5) + scale_color_manual(values = cols) + 
+        theme_bw())
+print(ggplot(dfpca, aes(x = PC5, y = PC6, color = sommeta)) + 
+        geom_point(size = 0.5) + scale_color_manual(values = cols) + 
+        theme_bw())
+print(ggplot(dfpca, aes(x = PC7, y = PC8, color = sommeta)) + 
+        geom_point(size = 0.5) + scale_color_manual(values = cols) + 
+        theme_bw())
+print(ggplot(dfpca, aes(x = PC9, y = PC10, color = sommeta)) + 
+        geom_point(size = 0.5) + scale_color_manual(values = cols) + 
+        theme_bw())
+```
+
+Also plot PCA colored by library ID/mouse
+
+```{r pca2}
+print(ggplot(dfpca, aes(x = PC1, y = PC2, color = library_id)) + 
+        geom_point(size = 0.5) + theme_bw())
+print(ggplot(dfpca, aes(x = PC1, y = PC2, color = mouse)) + 
+        geom_point(size = 0.5) + theme_bw())
+```
+
+## Find marker genes
+
+```{r scran_markers}
+system.time(scran_markers_all <- scran::findMarkers(sce, 
+                                                    clusters = colData(sce)$sommeta,
+                                                    block = NULL, 
+                                                    design = NULL,
+                                                    direction = "up",
+                                                    pval.type = "any",
+                                                    assay.type = "logcounts",
+                                                    get.spikes = FALSE, 
+                                                    log.p = TRUE, 
+                                                    lfc = 0.5))
+for (i in seq_len(length(scran_markers_all))) {
+  print(head(as.data.frame(scran_markers_all[[i]])))
+}
+scran_markers <- unique(unlist(lapply(scran_markers_all, function(w) {
+  rownames(subset(w, Top <= 1))
+})))
+
+scescranmarker <- sce[which(rownames(sce) %in% scran_markers), ]
+logcounts_scranmarkers <- logcounts(scescranmarker)
+rownames(logcounts_scranmarkers) <- rowData(scescranmarker)$Symbol
+dfscran <- as.data.frame(logcounts_scranmarkers) %>% tibble::rownames_to_column("gene") %>%
+  reshape2::melt() %>% dplyr::left_join(as.data.frame(colData(scescranmarker)) %>% 
+                                          tibble::rownames_to_column("variable") %>%
+                                          dplyr::select(variable, som100, sommeta)) %>%
+  dplyr::mutate(sommeta = factor(sommeta)) %>%
+  dplyr::mutate(som100 = factor(som100))
+```
+
+Heatmap of inferred marker genes
+
+```{r scran_markers_heatmap, fig.height = 12, fig.width = 10}
+dfsumscran <- dfscran %>% dplyr::group_by(gene, som100) %>%
+  dplyr::summarize(value = quantile(value, probs = 0.75)) %>%
+  tidyr::spread(som100, value) %>% as.data.frame()
+rownames(dfsumscran) <- dfsumscran$gene
+dfsumscran$gene <- NULL
+dfsumscran <- dfsumscran[apply(dfsumscran, 1, sd) > 0, ]
+pheatmap::pheatmap(dfsumscran, scale = "row", cluster_rows = TRUE, cluster_cols = TRUE, 
+                   annotation_col = data.frame(metaClust = factor(metaClustering), row.names = as.character(seq_len(length(metaClustering)))), 
+                   show_colnames = FALSE, show_rownames = TRUE, fontsize_row = 6, 
+                   annotation_colors = list(metaClust = cols))
+
+```
+
+
+## Look at known marker genes. 
+Marker genes for cell types in mouse brain were obtained from two recent publications:
+
+- [http://science.sciencemag.org/content/347/6226/1138.full](http://science.sciencemag.org/content/347/6226/1138.full)
+- [https://www.nature.com/articles/nn.4216](https://www.nature.com/articles/nn.4216)
+
+```{r markers, fig.width = 24, fig.height = 24}
+marker_genes <- read.csv("resources/marker_genes.csv", header = TRUE, as.is = TRUE) %>%
+  dplyr::arrange(population) %>% dplyr::select(gene, population) %>%
+  dplyr::distinct()
+
+keep <- which(rowData(sce)$Symbol %in% unique(marker_genes$gene))
+scemarker <- sce[keep, ]
+logcounts_markers <- assays(scemarker)[["logcounts"]]
+rownames(logcounts_markers) <- rowData(scemarker)$Symbol
+df <- as.data.frame(logcounts_markers) %>% tibble::rownames_to_column("gene") %>%
+  reshape2::melt() %>% dplyr::left_join(as.data.frame(colData(scemarker)) %>% 
+                                          tibble::rownames_to_column("variable") %>%
+                                          dplyr::select(variable, som100, sommeta)) %>%
+  dplyr::mutate(sommeta = factor(sommeta)) %>%
+  dplyr::mutate(som100 = factor(som100)) %>% 
+  dplyr::left_join(marker_genes %>% dplyr::select(gene, population)) %>%
+  dplyr::mutate(genepop = paste0(gene, " (", population, ")")) %>%
+  dplyr::arrange(population) %>% 
+  dplyr::mutate(gene = factor(gene, levels = unique(marker_genes$gene)))
+
+print(ggplot(df, aes(x = sommeta, y = value, fill = sommeta)) + 
+        geom_boxplot(outlier.size = 0.5) + facet_wrap(~ genepop, scales = "free_y") + 
+        scale_fill_manual(values = cols) + theme_bw())
+```
+
+Check the FDRs of the marker genes in each of the clusters
+
+```{r known_markers_fdr, fig.height = 12}
+L <- do.call(rbind, lapply(structure(marker_genes$gene, names = marker_genes$gene),
+                           function(g) {
+  do.call(rbind, lapply(seq_along(scran_markers_all), function(i) {
+    j <- grep(paste0("\\.", g, "$"), rownames(scran_markers_all[[i]]))
+    if (length(j) == 1) data.frame(gene = g, cluster = i, 
+                                   log.FDR = scran_markers_all[[i]][j, "log.FDR"],
+                                   stringsAsFactors = FALSE)
+    else data.frame(gene = g, cluster = i, log.FDR = NA, stringsAsFactors = FALSE)
+  }))
+}))
+L <- tidyr::spread(L, cluster, log.FDR)
+rownames(L) <- L$gene
+L$gene <- NULL
+L <- L[rowSums(is.na(L)) == 0, ]
+pheatmap::pheatmap(exp(L), scale = "none", cluster_rows = TRUE, cluster_cols = TRUE)
+```
+
+
+Plot the individual marker gene expression in each of the 100 original FlowSOM
+clusters, color by the final cluster assignment. 
+
+```{r markers-indiv, fig.width = 18}
+for (g in unique(df$genepop)) {
+  print(ggplot(df %>% dplyr::filter(genepop == g), 
+               aes(x = som100, y = value, fill = sommeta)) + 
+          geom_boxplot(outlier.size = 0.5) + ggtitle(g) + theme_bw() + 
+          theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+          scale_fill_manual(values = cols))
+}
+```
+
+## Heatmap of marker genes
+
+We make a heatmap of the marker genes, summarized for the cells in each of the 
+original FlowSOM clusters. As a summarization function, we use the third
+quartile.
+
+```{r, fig.width = 10, fig.height = 12}
+dfsum <- df %>% dplyr::group_by(genepop, som100) %>%
+  dplyr::summarize(value = quantile(value, probs = 0.75)) %>%
+  tidyr::spread(som100, value) %>% as.data.frame()
+rownames(dfsum) <- dfsum$genepop
+dfsum$genepop <- NULL
+dfsum <- dfsum[apply(dfsum, 1, sd) > 0, ]
+pheatmap::pheatmap(dfsum, scale = "row", cluster_rows = TRUE, cluster_cols = TRUE, 
+                   annotation_col = data.frame(metaClust = factor(metaClustering), row.names = as.character(seq_len(length(metaClustering)))), 
+                   show_colnames = FALSE, show_rownames = TRUE, fontsize_row = 6, 
+                   annotation_colors = list(metaClust = cols))
+```
+
+## t-SNE of subsampled data
+
+Here we apply t-SNE to 10,000 randomly selected cells, using the 50 first PCs as
+the input. We color the resulting representation by the assigned cluster. 
+
+```{r tsnesub}
+set.seed(123)
+subs <- sample(seq_len(nrow(pca)), 10000, replace = FALSE)
+pcasub <- pca[subs, ]
+rtsne_out <- Rtsne(as.matrix(pcasub), pca = FALSE, verbose = TRUE, perplexity = 30)
+rtsne_out <- data.frame(rtsne_out$Y)
+colnames(rtsne_out) <- c("tSNE1", "tSNE2")
+rtsne_out$sommeta <- factor(colData(sce)$sommeta[subs])
+print(ggplot(rtsne_out, aes(x = tSNE1, y = tSNE2, color = sommeta)) + 
+        geom_point(size = 0.75) + scale_color_manual(values = cols) + 
+        theme_bw())
+```
+
+## Session info
+
+```{r}
+date()
+sessionInfo()
+```
+
