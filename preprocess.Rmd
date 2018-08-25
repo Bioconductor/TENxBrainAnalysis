@@ -12,11 +12,18 @@ library(BiocStyle)
 ## Loading in the data
 
 The aim here is to convert the 10X data set into a `HDF5Matrix` object.
-We first obtain the data using the `r Githubpkg("LTLA/TENxBrainData")` package:
+We first obtain the data using the `r Biocpkg("TENxBrainData")` package:
 
 ```{r}
-library(TENxBrainData)
-sce <- TENxBrainData()
+#library(TENxBrainData)
+#sce <- TENxBrainData() # or we would, if it was working properly.
+library(SingleCellExperiment)
+library(HDF5Array)
+sce <- SingleCellExperiment(
+    list(counts=HDF5Array("rawdata/counts.h5", "counts")),
+    rowData=readRDS("rawdata/rowdata.rds"),
+    colData=readRDS("rawdata/coldata.rds")
+)
 sce
 ```
 
@@ -34,7 +41,7 @@ There's already gene symbols, so we just add the chromosome location.
 ```{r}
 library(TxDb.Mmusculus.UCSC.mm10.ensGene)
 chr.loc <- mapIds(TxDb.Mmusculus.UCSC.mm10.ensGene, keys=rowData(sce)$Ensembl, 
-                  keytype="GENEID", column="CDSCHROM")
+    keytype="GENEID", column="CDSCHROM")
 rowData(sce)$Chr <- chr.loc
 head(rowData(sce))
 ```
@@ -45,25 +52,41 @@ We use `r Biocpkg("scater")` to calculate quality control summarized for each ce
 
 ```{r}
 library(scater)
-sce <- calculateQCMetrics(sce, feature_controls=list(Mito=which(rowData(sce)$Chr=="chrM")))
+system.time({
+    sce <- calculateQCMetrics(sce, 
+        feature_controls=list(Mito=which(rowData(sce)$Chr=="chrM")),
+        compact=TRUE, BPPARAM=BPPARAM)
+})
 head(colnames(rowData(sce)))
 ```
 
-We have a look at the three relevant metrics.
+We have a look at the three relevant metrics, plotted against the batch of origin for each cell.
+We start with the log-library size:
 
-```{r preprocess-qchist, fig.height=6, fig.width=12}
-par(mfrow=c(1,3))
-hist(sce$log10_total_counts, xlab=expression("Log"[10]~"library size"), col="grey80")
-hist(sce$log10_total_features, xlab=expression("Log"[10]~"number of genes expressed"), col="grey80")
-hist(sce$pct_counts_Mito, xlab="Percentage of mitochondrial reads", col="grey80", breaks=100)
+```{r libsize}
+plotColData(sce, c("scater_qc", "all", "log10_total_counts"), x="Library")
+```
+
+... and then the log-number of detected features per cell:
+
+```{r numfeat}
+plotColData(sce, c("scater_qc", "all", "log10_total_features_by_counts"), x="Library")
+```
+
+... and finally the proportion of mitochondrial counts:
+
+```{r mitoprop} 
+plotColData(sce, c("scater_qc", "feature_control_Mito", "pct_counts"), x="Library")
 ```
 
 We use some of these metrics for quality control on the cells.
 This is done within each batch to avoid discarding cells, e.g., if one batch was sequenced at lower depth.
 
 ```{r}
-low.libsize <- isOutlier(sce$log10_total_counts, nmad=3, batch=sce$Library, type="lower")
-low.ngenes <- isOutlier(sce$log10_total_features, nmad=3, batch=sce$Library, type="lower")
+low.libsize <- isOutlier(sce$scater_qc$all$log10_total_counts, 
+    nmad=3, batch=sce$Library, type="lower")
+low.ngenes <- isOutlier(sce$scater_qc$all$log10_total_features_by_counts, 
+    nmad=3, batch=sce$Library, type="lower")
 discard <- low.libsize | low.ngenes 
 data.frame(LowLib=sum(low.libsize), LowGenes=sum(low.ngenes), Lost=sum(discard))
 ```
@@ -76,22 +99,28 @@ sce <- sce[,!discard]
 
 ## Looking at gene-based metrics
 
-For further diagnostics, we calculate the average count (adjusted for library size) and the number of cells expressing each gene.
+For further diagnostics, we calculate the average count, adjusted for library size.
+We re-use the total counts as the size factors to avoid computing them again.
 
-```{r}
-ave.count <- calcAverage(sce)
+```{r ave-per-gene}
+system.time({
+    ave.count <- calcAverage(sce, BPPARAM=BPPARAM, 
+        use_size_factors=sce$total_counts)
+})
 rowData(sce)$AverageCount <- ave.count
-hist(log10(ave.count), xlab=expression("Log"[10]~"average count"), col="grey80")
-n.cells <- nexprs(sce, byrow=TRUE)
-rowData(sce)$NumCells <- n.cells
-hist(log10(n.cells), xlab=expression("Log"[10]~"number of cells"), col="grey80")
+
+pct.cells <- rowData(sce)$scater_qc$all$n_cells_by_counts/ncol(sce) * 100
+smoothScatter(log10(ave.cout), pct.cells, ylab="Percentage of cells",
+    xlab=expression("Log"[10]~"average count"))
 ```
 
-We also inspect the top most-highly-expressed genes.
+We also inspect the identities of the top most-highly-expressed genes.
 
 ```{r}
-cols <- c("Ensembl", "Symbol", "AverageCount", "NumCells")
-top.genes <- rowData(sce)[order(-ave.count),cols]
+cols <- c("Ensembl", "Symbol", "AverageCount")
+top.genes <- rowData(sce)[,cols]
+top.genes$PctCells <- pct.cells
+top.genes <- top.genes[order(ave.count, decreasing=TRUE),]
 head(as.data.frame(top.genes), 20)
 ```
 
@@ -99,6 +128,7 @@ head(as.data.frame(top.genes), 20)
 Serializing the SCE object:
 
 ```{r}
+dir.create("objects")
 saveRDS(sce, file="objects/sce.rds")  
 ```
 -->
