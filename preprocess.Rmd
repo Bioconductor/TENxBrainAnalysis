@@ -48,7 +48,7 @@ head(rowData(sce))
 
 ## Performing cell-based quality control
 
-We use `r Biocpkg("scater")` to calculate quality control summarized for each cell and gene.
+We use `r Biocpkg("scater")` to calculate quality control summaries for each cell and gene.
 
 ```{r}
 library(scater)
@@ -61,22 +61,15 @@ head(colnames(rowData(sce)))
 ```
 
 We have a look at the three relevant metrics, plotted against the batch of origin for each cell.
-We start with the log-library size:
 
-```{r libsize}
-plotColData(sce, c("scater_qc", "all", "log10_total_counts"), x="Library")
-```
-
-... and then the log-number of detected features per cell:
-
-```{r numfeat}
-plotColData(sce, c("scater_qc", "all", "log10_total_features_by_counts"), x="Library")
-```
-
-... and finally the proportion of mitochondrial counts:
-
-```{r mitoprop} 
-plotColData(sce, c("scater_qc", "feature_control_Mito", "pct_counts"), x="Library")
+```{r qchist, fig.height=6, fig.width=12}
+par(mfrow=c(1,3))
+hist(sce$scater_qc$all$log10_total_counts, 
+    xlab=expression(Log[10]~"library size"), col="grey80")
+hist(sce$scater_qc$all$log10_total_features_by_counts, 
+    xlab=expression(Log[10]~"number of genes expressed"), col="grey80")
+hist(sce$scater_qc$feature_control_Mito$pct_counts, 
+    xlab="Percentage of mitochondrial reads", col="grey80", breaks=50)
 ```
 
 We use some of these metrics for quality control on the cells.
@@ -99,26 +92,20 @@ sce <- sce[,!discard]
 
 ## Looking at gene-based metrics
 
-For further diagnostics, we calculate the average count, adjusted for library size.
-We re-use the total counts as the size factors to avoid computing them again.
+For each feature, we plot the average count against the percentage of cells in which expression was detected.
 
 ```{r ave-per-gene}
-system.time({
-    ave.count <- calcAverage(sce, BPPARAM=BPPARAM, 
-        use_size_factors=sce$total_counts)
-})
-rowData(sce)$AverageCount <- ave.count
-
+ave.count <- rowData(sce)$scater_qc$all$mean_counts
 pct.cells <- rowData(sce)$scater_qc$all$n_cells_by_counts/ncol(sce) * 100
-smoothScatter(log10(ave.cout), pct.cells, ylab="Percentage of cells",
+smoothScatter(log10(ave.count), pct.cells, ylab="Percentage of cells",
     xlab=expression("Log"[10]~"average count"))
 ```
 
 We also inspect the identities of the top most-highly-expressed genes.
 
 ```{r}
-cols <- c("Ensembl", "Symbol", "AverageCount")
-top.genes <- rowData(sce)[,cols]
+top.genes <- rowData(sce)[,c("Ensembl", "Symbol")]
+top.genes$AveCount <- ave.count
 top.genes$PctCells <- pct.cells
 top.genes <- top.genes[order(ave.count, decreasing=TRUE),]
 head(as.data.frame(top.genes), 20)
