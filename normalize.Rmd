@@ -8,35 +8,22 @@ knitr::opts_chunk$set(dpi=300, dev="png", dev.args=list(pointsize=15))
 ```{r, echo=FALSE, results="hide"}
 library(BiocStyle)
 library(HDF5Array)
-library(scater)
 library(scran)
 sce <- readRDS("objects/sce.rds")
 ```
 
-## Setting up genes and cells
+## Performing a rough pre-clustering
 
 Here, we use the deconvolution method to compute size factors for each cell.
-We start by computing the average abundance of each gene.
-This is to filter out low-abundance genes, as having too many zeroes will overwhelm the method.
-Note that this only applies for normalization - this particular filter is not used in the rest of the analysis.
+We start by doing some pre-clustering to split the cells into sensible clusters, to avoid violating the non-DE assumption and distorting the size factors.
 
 ```{r}
-keep <- rowData(sce)$AverageCount >= 0.1
-summary(keep)
-```
-
-We do some pre-clustering to split the cells into sensible clusters, to avoid violating the non-DE assumption and distorting the size factors.
-This is done by applying the `quickCluster` function on the cells in each library.
-
-```{r}
-by.lib <- split(seq_len(ncol(sce)), sce$Library)
-cluster.id <- character(ncol(sce))
-for (lib in names(by.lib)) { 
-    current <- by.lib[[lib]]
-    ids <- quickCluster(sce[,current], subset.row=keep, method="igraph", 
-        max.size=3000, irlba.args=list(maxit=1000))
-    cluster.id[current] <- paste0(lib, ".", ids)
-}
+library(scran)
+system.time({
+    ids <- quickCluster(sce, min.mean=0.1, method="igraph",
+        block=sce$Library, block.BPPARAM=BPPARAM)
+})
+summary(tabulate(as.integer(ids)))
 ```
 
 ## Calculating size factors
@@ -44,33 +31,26 @@ for (lib in names(by.lib)) {
 We now compute a size factor for each cell using the specified parameters.
 
 ```{r}
-library(scran)
-sce <- computeSumFactors(sce, cluster=cluster.id, subset.row=keep, min.mean=NULL)
+system.time({
+    sce <- computeSumFactors(sce, cluster=ids, min.mean=0.1, BPPARAM=BPPARAM)
+})
 summary(sizeFactors(sce))
 ```
 
 We can have a look at them in more detail, compared to the library size for each cell.
 
 ```{r sizefacplot}
-plot(sce$total_counts, sizeFactors(sce), log="xy", xlab="Library size", 
+plot(sce$scater_qc$all$total_counts, sizeFactors(sce), 
+    log="xy", xlab="Library size", 
     ylab="Size factors", cex=0.2, pch=16)
 ```
 
 ## Normalizing the expression values 
 
-We calculate normalized log-expression values and save this to a new `HDF5Matrix` object.
-This involves resetting the HDF5 dump file directory and location so that the output is retained.
+We calculate normalized log-expression values, using delayed operations for speed instead of saving to a new HDF5 file.
 
 ```{r}
-setHDF5DumpFile("objects/norm_exprs.h5")
-sce <- normalize(sce)
-logcounts(sce)
-```
-
-We reset the locations to the defaults for future use.
-
-```{r}
-setHDF5DumpFile()
+logcounts(sce) <- t(t(counts(sce))/sizeFactors(sce))
 ```
 
 <!--
