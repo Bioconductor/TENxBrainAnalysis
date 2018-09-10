@@ -50,7 +50,7 @@ plot(sce$scater_qc$all$total_counts, sizeFactors(sce),
 We calculate normalized log-expression values, using delayed operations for speed instead of saving to a new HDF5 file.
 
 ```{r}
-logcounts(sce) <- t(t(counts(sce))/sizeFactors(sce))
+logcounts(sce) <- log2(t(t(counts(sce))/sizeFactors(sce)) + 1)
 ```
 
 <!--
