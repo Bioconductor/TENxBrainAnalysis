@@ -8,41 +8,52 @@ knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 library(BiocStyle)
 library(scran)
 sce <- readRDS("objects/sce.rds")
-```
 
-First, we set up the design matrix to block on the library of origin for each cell.
-This ensures that we do not detect variance due to technical differences in sequencing.
-
-```{r}
-lib.source <- factor(sce$Library)
-design <- model.matrix(~0 + lib.source)
+library(DelayedArray)
+setAutoBlockSize(100*100*8) # Ensure we load one chunk's worth of rows.
 ```
 
 We compute the variance of the normalized log-expression values while blocking on the library of origin, and we fit a trend to it.
 Some fiddling with the trend parameters is necessary to obtain an appropriate fit at high abundances.
 
 ```{r}
-library(scran)
-fit <- trendVar(sce, method="loess", parametric=TRUE, 
-    design=design, use.spikes=FALSE, 
-    loess.args=list(span=0.05, control=loess.control(iterations=100)))
+system.time({
+    fit <- trendVar(sce, method="loess", parametric=TRUE, 
+        design=sce$Library, use.spikes=FALSE, BPPARAM=BPPARAM,
+        loess.args=list(span=0.05, control=loess.control(iterations=100)))
+})
 ```
 
-We then decompose the biological and technical component for each gene.
+For comparison, we fit a trend corresponding to pure Poisson noise.
 
 ```{r}
-dec <- decomposeVar(fit=fit)
+system.time({
+    poistrend <- makeTechTrend(
+        means=2^seq(0, max(fit$mean), length.out=100) - 1,
+        size.factors=sizeFactors(sce),
+        approx.npts=10000, BPPARAM=BPPARAM)
+})
+```
+
+We decompose the biological and technical component for each gene.
+Note that we use the Poisson trend here, as the trend fitted to the endogenous variances does not provide a good estimate of the technical noise for UMI data.
+
+```{r}
+fit0 <- fit
+fit0$trend <- poistrend
+dec <- decomposeVar(fit=fit0)
 dec <- cbind(rowData(sce)[,1:2], dec)
 dec <- dec[order(dec$p.value, -dec$bio),]
 head(dec)
 ```
 
-We examine the mean-variance relationship and verify that the trend was fitted correctly.
+We examine the mean-variance relationship.
 
 ```{r hvgplot}
-plot(dec$mean, dec$total, pch=16, cex=0.5, xlab="Mean of log-expression", 
+plot(fit$mean, fit$var, pch=16, cex=0.5, xlab="Mean of log-expression", 
     ylab="Variance of log-expression")
 curve(fit$trend(x), add=TRUE, col="red")
+curve(poistrend(x), add=TRUE, col="blue")
 ```
 
 Finally we save the results to file.
